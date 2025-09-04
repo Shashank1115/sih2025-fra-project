@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FRA Atlas</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    body { margin:0; font-family: system-ui, Arial; }
+    #topbar { display:flex; gap:12px; align-items:center; padding:10px; border-bottom:1px solid #eee; }
+    #cards { display:flex; gap:12px; }
+    .card { padding:8px 12px; background:#f8f9fa; border:1px solid #eee; border-radius:8px; }
+    #map { height: calc(100vh - 120px); }
+    label { font-size:14px; }
+    input, select { padding:4px 6px; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <div id="cards">
+      <div class="card"><b>Total Claims:</b> <span id="c_total">-</span></div>
+      <div class="card"><b>Granted:</b> <span id="c_granted">-</span></div>
+      <div class="card"><b>Pending:</b> <span id="c_pending">-</span></div>
+      <div class="card"><b>Water (ha):</b> <span id="a_water">-</span></div>
+      <div class="card"><b>Veg (ha):</b> <span id="a_veg">-</span></div>
+    </div>
+
+    <div style="margin-left:auto; display:flex; gap:8px;">
+      <label>Claim status:
+        <select id="f_status">
+          <option value="">All</option>
+          <option value="Granted">Granted</option>
+          <option value="Pending">Pending</option>
+        </select>
+      </label>
+      <label>Village:
+        <input id="f_village" placeholder="type village name"/>
+      </label>
+      <button id="btn_apply">Apply Filters</button>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([22.5, 80.4], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+    const claimsLayer = L.geoJSON(null, {
+      pointToLayer: (feat, latlng) => L.circleMarker(latlng, {radius:6, color:'#222', fillColor:'#ff5555', fillOpacity:0.8}),
+      onEachFeature: (f, layer) => {
+        const p = f.properties || {};
+        layer.bindPopup(
+          `<b>${p.patta_holder || 'Unknown'}</b><br/>
+           ${p.village || ''}<br/>
+           Status: ${p.claim_status || ''}<br/>
+           Coords: ${p.coordinates || ''}`
+        );
+      }
+    }).addTo(map);
+
+    const colors = {
+      cropland:'#4caf50', forest:'#1b5e20', water_body:'#2979ff', urban:'#e53935', barren_land:'#757575'
+    };
+    const assetsLayer = L.geoJSON(null, {
+      style: f => ({color: colors[f.properties?.asset_type] || '#000', weight: 1, fillOpacity:0.4}),
+      onEachFeature: (f, layer) => {
+        const p = f.properties || {};
+        layer.bindPopup(`<b>${p.asset_type}</b>`);
+      }
+    }).addTo(map);
+
+    async function loadSummary() {
+      const r = await fetch('/summary');
+      const j = await r.json();
+      document.getElementById('c_total').textContent   = j.claims;
+      document.getElementById('c_granted').textContent = j.granted;
+      document.getElementById('c_pending').textContent = j.pending;
+      document.getElementById('a_water').textContent   = j.areas_ha?.water_body ?? '-';
+      const veg = (j.areas_ha?.cropland || 0) + (j.areas_ha?.forest || 0);
+      document.getElementById('a_veg').textContent     = veg.toFixed(2);
+    }
+
+    async function loadClaims() {
+      const status = document.getElementById('f_status').value;
+      const village = document.getElementById('f_village').value.trim();
+      const qs = new URLSearchParams();
+      if (status) qs.set('status', status);
+      if (village) qs.set('village', village);
+      const r = await fetch('/claims_geojson?' + qs.toString());
+      const j = await r.json();
+      claimsLayer.clearLayers().addData(j);
+      if (j.features?.length) map.fitBounds(L.geoJSON(j).getBounds(), {maxZoom: 13});
+    }
+
+    async function loadAssets() {
+      const r = await fetch('/assets_geojson');
+      const j = await r.json();
+      assetsLayer.clearLayers().addData(j);
+    }
+
+    document.getElementById('btn_apply').onclick = () => {
+      loadClaims();
+    };
+
+    loadSummary(); loadClaims(); loadAssets();
+  </script>
+</body>
+</html>
