@@ -6,50 +6,53 @@ import os
 DB_PATH = "fra_claims.db"
 
 def create_database():
-    """Create SQLite database with FRA claims and assets tables"""
+    """Create SQLite database with FRA claims and assets tables (fresh)."""
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
 
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
     # Claims table
-    cursor.execute("""
+    cur.execute("""
         CREATE TABLE fra_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             patta_holder TEXT,
             village TEXT,
-            coordinates TEXT,
+            coordinates TEXT,  -- "lat,lon"
             claim_status TEXT,
-            geometry TEXT
+            geometry TEXT       -- WKT of claim point (optional)
         )
     """)
 
-    # Assets table
-    cursor.execute("""
+    # Assets table (link to claim_id + village)
+    cur.execute("""
         CREATE TABLE fra_assets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id INTEGER,
             asset_type TEXT,
             village TEXT,
-            geometry TEXT
+            geometry TEXT,
+            FOREIGN KEY (claim_id) REFERENCES fra_claims(id)
         )
     """)
 
     conn.commit()
     conn.close()
-    print("Standard SQLite database created successfully.")
-
+    print("✅ Standard SQLite database created.")
 
 def save_data_to_db(gdf, table_name):
-    """Save a GeoDataFrame to SQLite as WKT geometry"""
+    """Save a GeoDataFrame to SQLite as WKT geometry."""
+    if gdf is None or gdf.empty:
+        print(f"ℹ️ No rows to save for '{table_name}'.")
+        return
+
     conn = sqlite3.connect(DB_PATH)
+    df = gdf.copy()
 
-    # Convert Shapely geometry to WKT strings
-    if "geometry" in gdf.columns:
-        gdf = gdf.copy()
-        gdf["geometry"] = gdf["geometry"].apply(lambda geom: geom.wkt if geom else None)
+    if "geometry" in df.columns:
+        df["geometry"] = df["geometry"].apply(lambda geom: geom.wkt if geom is not None else None)
 
-    gdf.to_sql(table_name, conn, if_exists="append", index=False)
+    df.to_sql(table_name, conn, if_exists="append", index=False)
     conn.close()
-    print(f"Data saved to table '{table_name}'.")
-
+    print(f"💾 Data saved to table '{table_name}'.")
