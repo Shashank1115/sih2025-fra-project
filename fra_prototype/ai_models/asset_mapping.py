@@ -328,3 +328,4 @@ def map_assets_from_satellite_image(claim_gdf):
     claim_geometry = claim_gdf.geometry.iloc[0]
     asset_gdf = detect_assets(claim_geometry)
     return asset_gdf
+
